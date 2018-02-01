@@ -1,0 +1,48 @@
+---
+title: "lab1"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(install.load)
+
+install_load("mosaic", "ggplot2", "devtools", "tidyverse", "kernlab", "knitr")
+```
+
+## Intro
+
+![The modern human struggle.](https://www.computerhope.com/jargon/s/spam.jpg "computerhope.com")
+
+Let's look at data labelled as either spam or non-spam. Every column (except for the response variable 'type') is a keyword, every row is a specific observation of a single email, and the values are relative frequencies of the keyword in that particular email.
+
+```{r loadData, echo = FALSE, results = 'asis'}
+data(spam) # Email spam dataset from kernlab lib
+kable(head(spam), caption = "First few rows of spam dataset")
+```
+
+## Summary of Data
+
+The keyword 'you'
+```{r}
+sum.you <- summary(spam$you)
+sum.you
+```
+has mean frequency `r sum.you['Mean']`
+
+The keyword 'capitalAve'
+```{r}
+summary(spam$capitalAve)
+```
+
+The type of email, spam or nonspam
+```{r}
+summary(spam$type)
+```
+
+## Conclusion
+
