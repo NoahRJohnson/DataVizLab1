@@ -11,38 +11,79 @@ knitr::opts_chunk$set(echo = TRUE)
 
 library(install.load)
 
-install_load("mosaic", "ggplot2", "devtools", "tidyverse", "kernlab", "knitr")
+install_load("mosaic", "ggplot2", "devtools", "tidyverse", "kernlab", "knitr", "kableExtra")
 ```
 
 ## Intro
 
 ![The modern human struggle.](https://www.computerhope.com/jargon/s/spam.jpg "computerhope.com")
 
-Let's look at data labelled as either spam or non-spam. Every column (except for the response variable 'type') is a keyword, every row is a specific observation of a single email, and the values are relative frequencies of the keyword in that particular email.
+Let's look at data labelled as either spam or non-spam. [Documentation](https://archive.ics.uci.edu/ml/datasets/spambase) of the dataset tells us that each row in this dataset is an observation of a particular email, classified as either spam or non-spam. Most columns give frequencies of the keyword or character in that particular email. There are three variables concerning sequences of capital letters, and the 'type' variable encodes the response variable.
 
 ```{r loadData, echo = FALSE, results = 'asis'}
 data(spam) # Email spam dataset from kernlab lib
-kable(head(spam), caption = "First few rows of spam dataset")
+spam %>% head() %>% kable()
 ```
 
 ## Summary of Data
 
-The keyword 'you'
+The distribution of the 'type' variable will obviously be useful to examine.
 ```{r}
-sum.you <- summary(spam$you)
-sum.you
+sum.type <- summary(spam$type)
 ```
-has mean frequency `r sum.you['Mean']`
+```{r, echo=FALSE}
+sum.type
+```
+We see there are `r sum.type['spam']` spam emails out of a total of `r sum.type['spam'] + sum.type['nonspam']` emails.
 
-The keyword 'capitalAve'
-```{r}
-summary(spam$capitalAve)
+
+The first few observations we looked at in our dataset were all spam, so we can't tell which variables differ between classifications. Let's explicitly look at that now.
+
+```{r, warning=FALSE}
+# Calculate the mean of each column for spam and non-spam groups
+dt <- spam %>% group_by(type) %>% summarise_all(mean)
+
+# Subtract the non-spam row from the spam row
+# Store the result in a new row showing the difference
+diff_row <- 
+  (dt %>% filter(type == "spam") %>% select(-type)) -
+  (dt %>% filter(type == "nonspam") %>% select(-type))
+
+# Create a new 'type' factor level
+dt <- dt %>% mutate(type = factor(type, levels = c("nonspam", "spam", "diff")))
+
+# Set the new row's type to "diff"
+diff_row["type"] <- "diff"
+
+# Append the new row to our table
+dt <- rbind(dt, diff_row)
+
+# Display the table
+kable(dt)
 ```
 
-The type of email, spam or nonspam
+Ok, so let's choose two variables which have a high magnitude, but on different sides of classification. 
+'capitalTotal', the total number of capital letters in the e-mail, and 'hp', the frequency of the keyword 'hp'.
+
 ```{r}
-summary(spam$type)
+sum.capTot <- summary(spam$capitalTotal)
 ```
+```{r, echo = FALSE}
+sum.capTot
+```
+The average number of capital letters  `r sum.capTot['Mean']`
+
+```{r}
+sum.hp <- summary(spam$hp)
+```
+```{r, echo = FALSE}
+sum.hp
+```
+'hp' has mean frequency `r sum.hp['Mean']`
+
+
 
 ## Conclusion
+
+empty
 

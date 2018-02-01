@@ -1,2 +1,6 @@
 .Rproj.*
 *.Rproj
+.Rhistory
+lab1_cache/
+*.pdf
+.RData
