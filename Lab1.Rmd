@@ -1,9 +1,10 @@
 ---
-title: "lab1"
+title: "Data Visualization Lab 1: R Markdown"
 output:
   html_document:
     toc: true
     toc_float: true
+    fig_caption: yes
 ---
 
 ```{r setup, include=FALSE}
@@ -11,15 +12,16 @@ knitr::opts_chunk$set(echo = TRUE)
 
 library(install.load)
 
-install_load("mosaic", "ggplot2", "devtools", "tidyverse", "kernlab", "knitr", "kableExtra")
+install_load("mosaic", "ggplot2", "devtools", "tidyverse", "kernlab", "knitr", "kableExtra", "ROCR")
 ```
 
 ## Intro
 
-![The modern human struggle.](https://www.computerhope.com/jargon/s/spam.jpg "computerhope.com")
+![*ComputerHope.com*](https://www.computerhope.com/jargon/s/spam.jpg "The modern human struggle.")
 
-Let's look at data labelled as either spam or non-spam. [Documentation](https://archive.ics.uci.edu/ml/datasets/spambase) of the dataset tells us that each row in this dataset is an observation of a particular email, classified as either spam or non-spam. Most columns give frequencies of the keyword or character in that particular email. There are three variables concerning sequences of capital letters, and the 'type' variable encodes the response variable.
+Let's look at the "spam" dataset found in the *kernlab* package. [Documentation](https://archive.ics.uci.edu/ml/datasets/spambase) of the dataset tells us that each row in this dataset is an observation of a particular email, classified as either spam or non-spam. Most columns describe frequencies of keywords or characters in that particular email. There are three variables describing sequences of capital letters, and the 'type' variable is a factor encoding the response variable.
 
+Here's a few columns from the head of the dataset:
 ```{r loadData, echo = FALSE, results = 'asis'}
 data(spam) # Email spam dataset from kernlab lib
 spam %>% head() %>% kable()
@@ -27,6 +29,7 @@ spam %>% head() %>% kable()
 
 ## Summary of Data
 
+### Type
 The distribution of the 'type' variable will obviously be useful to examine.
 ```{r}
 sum.type <- summary(spam$type)
@@ -34,9 +37,9 @@ sum.type <- summary(spam$type)
 ```{r, echo=FALSE}
 sum.type
 ```
-We see there are `r sum.type['spam']` spam emails out of a total of `r sum.type['spam'] + sum.type['nonspam']` emails.
+We see there are `r sum.type['spam']` spam emails out of a total of `r sum.type['spam'] + sum.type['nonspam']` emails, or `r signif(sum.type['spam'] / (sum.type['spam'] + sum.type['nonspam']) * 100, digits = 3)`% spam.
 
-
+### Differences
 The first few observations we looked at in our dataset were all spam, so we can't tell which variables differ between classifications. Let's explicitly look at that now.
 
 ```{r, warning=FALSE}
@@ -59,11 +62,13 @@ diff_row["type"] <- "diff"
 dt <- rbind(dt, diff_row)
 
 # Display the table
-kable(dt)
+kable(dt, caption = "Group Means and Differences")
 ```
 
-Ok, so let's choose two variables which have a high magnitude, but on different sides of classification. 
-'capitalTotal', the total number of capital letters in the e-mail, and 'hp', the frequency of the keyword 'hp'.
+Ok, so let's choose two variables which have a high magnitude, but on different sides of classification.
+
+### capitalTotal
+First let's examine 'capitalTotal', the total number of capital letters in the e-mail. Our differences table tells us that in our sample, spam emails have an average of `r round(dt %>% filter(type == "diff") %>% select(capitalTotal))` more capital letters in them than non-spam emails.
 
 ```{r}
 sum.capTot <- summary(spam$capitalTotal)
@@ -71,19 +76,138 @@ sum.capTot <- summary(spam$capitalTotal)
 ```{r, echo = FALSE}
 sum.capTot
 ```
-The average number of capital letters  `r sum.capTot['Mean']`
+That's a large maximum! And the mean number of capital letters per email, `r round(sum.capTot['Mean'])`, is greater than the 3rd quartile, `r round(sum.capTot['3rd Qu.'])`. This must be a skewed distribution.
 
+Since we believe there's a large difference between capital letters in spam and non-spam emails, let's visualize the distribution of both groups.
+```{r, warning=FALSE}
+spam %>% ggplot() +
+  geom_density(aes(x = capitalTotal, group = type, fill = type), alpha = 0.5, adjust = 2) + 
+  coord_cartesian(xlim = c(0, 4000)) + # ignore outliers
+  xlab("Number of Capital Letters") +
+  ylab("Density")
+```
+
+As expected, the distribution of the spam group has a longer right tail. This has implications for a spam filter. A low number of capital letters in the email does not rule out spam, but a sufficiently high number could flag the email as likely to be spam.
+
+### hp
+Now let's also examine the variable 'hp', the frequency of the keyword 'hp' within each email. On average in our sample, the phrase 'hp' occurs in non-spam emails an average of `r -100 * signif(dt %>% filter(type == "diff") %>% select(hp), digits = 3)`% more often than in spam. That's a huge difference!
 ```{r}
 sum.hp <- summary(spam$hp)
 ```
 ```{r, echo = FALSE}
 sum.hp
 ```
-'hp' has mean frequency `r sum.hp['Mean']`
+The median indicates that many values are at zero, but there is a relatively large maximum of `r signif(sum.hp['Max.'], digits = 3)`. As before, let's check the distribution of the keyword over both labels.
+
+```{r, warning=FALSE}
+spam %>% ggplot() +
+  geom_density(aes(x = hp, group = type, fill = type), alpha = 0.5, adjust = 2) + 
+  coord_cartesian(xlim = c(0, 4)) + # ignore outliers
+  xlab("Percent frequency of keyword 'hp'") +
+  ylab("Density")
+```
+
+Yep, that's a big difference! It seems the presence of the phrase 'hp' in an email could be used to indicate that it is not spam.
+
+## Data Analysis
+
+Ok, now let's explore building a predictive model to classify emails as spam or non-spam.
+
+### Split Data
+
+First we'll randomly set aside 10% of our dataset to act as a testing set, and we'll use the other 90% to train the model.
+
+```{r}
+TEST_SIZE_PCT <- 0.1
+ntest <- round(nrow(spam) * TEST_SIZE_PCT)
+
+indices.test <- base::sample(1:nrow(spam), ntest, replace = FALSE)
+
+spam.test <- spam[indices.test,]
+spam.train <- spam[-indices.test,]
+
+print(nrow(spam.test))
+print(nrow(spam.train))
+```
 
 
+### Train model
+
+Let's keep it simple and train a logistic regression.
+
+```{r, warning=FALSE}
+# Fit the logistic regression, and look at p-values for significant features
+model <- glm(type ~ ., data = spam.train, family = binomial)
+summary(model)
+```
+
+Ok, R makes that easy, and even conveniently let's us check p-values for signifcant features of the model. Now let's check how well this model fits the training data, first using a confusion matrix.
+```{r}
+# Use model to generate labels on training set
+predict.train <- predict(model, type = 'response')
+
+# Confusion matrix
+table(spam.train$type, predict.train > 0.5)
+```
+
+Not bad! Let's also explicitly get an accuracy metric, between 0 and 100 percent.
+```{r}
+# Function which works on subsets of the spam dataset
+compute_accuracy <- function(model, spam_subset) {
+  
+  # Run the model on the dataset, and interpret an output p > 0.5 as a
+  # positive spam classification
+  predicted_type <- predict(model, newdata = spam_subset, type='response')
+  predicted_type <- ifelse(predicted_type > 0.5, "spam", "nonspam")
+  
+  # Calculate a metric for accuracy
+  error <- mean(predicted_type != spam_subset$type)
+  
+  accuracy <- (1 - error) * 100
+  accuracy <- signif(accuracy, digits = 3)
+  
+  return(accuracy)
+}
+
+# Run the function on the training data
+print(sprintf("Accuracy: %.1f%%", compute_accuracy(model, spam.train)))
+```
+
+Looking pretty good, as we would expect since the model was fit to this training data.
+
+### Test model
+Now let's see how well the model classifies the test set data, which it hasn't seen before.
+```{r}
+test_accuracy <- compute_accuracy(model, spam.test)
+print(sprintf("Accuracy: %.1f%%", test_accuracy))
+```
+The model uses the features in the test set to correctly classify email as spam `r signif(test_accuracy, digits = 3)`% of the time. That seems fairly good!
+
+Another tool commonly used to test classifiers is an ROC curve. We'll use the ROCR package to produce one.
+```{r}
+# Use the model to classify the test data set
+predict.test <- predict(model, type = 'response')
+
+# Create an ROCR prediction object
+pred <- prediction(predict.train, spam.train$type)
+
+# Create an ROCR performance object
+perf <- performance(pred, measure = 'tpr', x.measure = 'fpr')
+
+# Plot the ROC curve
+plot(perf)
+```
+
+This looks really good! We want the plot to hug the top-left corner. We can compute a useful statistic of how good our classifier is, using the area under the curve (AUC).
+
+```{r}
+auc <- performance(pred, measure = "auc")
+auc <- auc@y.values[[1]]
+print(auc)
+```
+
+An AUC above .95 is considered very high. Our model's AUC of `r signif(auc, digits = 3)` `r ifelse(auc > 0.95, "meets", "does not meet")` that requirement.
 
 ## Conclusion
 
-empty
-
+Given our promising results, we may be tempted to deploy our model and call it a day. But we should keep in mind our model's limits. Any model is only as good as its data, and several of the influential features in our sample are very specific (like 'hp' and 'george'). Also, false positive classifications as spam are clearly very undesirable to an end user. So we may need to do more work to achieve an error rate less than `r signif(100 - test_accuracy, digits = 3)`%.
